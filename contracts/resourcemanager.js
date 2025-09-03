@@ -237,16 +237,16 @@ actions.subscribe = async (payload) => {
   let accountControl = await api.db.findOne(table, { account: sender });
   const create = !accountControl;
 
-  api.assert(!accountControl || !accountControl.isDenied, 'cannot be purchased as long as you are throttled.');
+  if (!api.assert(!accountControl || !accountControl.isDenied, 'cannot be purchased as long as you are throttled.')) return;
 
   const stillAllowed = isStillAllowed(accountControl);
-  api.assert(!stillAllowed, 'can only be purchased once a month.');
+  if (!api.assert(!stillAllowed, 'can only be purchased once a month.')) return;
 
   const feeTransfer = await api.executeSmartContract('tokens', 'transfer', {
     to: 'null', symbol: burnParams.burnSymbol, quantity: burnParams.allowlistBurnFee, isSignedWithActiveKey: true,
   });
 
-  api.assert(transferIsSuccessful(feeTransfer, 'transfer', api.sender, 'null', burnParams.burnSymbol, burnParams.allowlistBurnFee), 'not enough tokens for allowList fee');
+  if (!api.assert(transferIsSuccessful(feeTransfer, 'transfer', api.sender, 'null', burnParams.burnSymbol, burnParams.allowlistBurnFee), 'not enough tokens for allowList fee')) return;
 
   const date = new Date(`${api.hiveBlockTimestamp}.000Z`);
   date.setDate(date.getDate() + 30);

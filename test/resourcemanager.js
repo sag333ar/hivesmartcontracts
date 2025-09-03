@@ -755,10 +755,93 @@ describe('resourcemanager', function () {
     await fixture.sendBlock(block);
 
     const res = await fixture.database.getLatestBlockInfo();
-    
+
     const log0 = JSON.parse(res.transactions[0].logs);
     assert.ok(log0.errors || log0.errors.length >= 1, 'Transaction should fail');
     assert.equal(log0.errors[0], 'can only be purchased once a month.', 'Transaction should fail with correct error');
+
+    let dbRes = await fixture.database.findOne({
+      contract: 'resourcemanager',
+      table: 'accountControls',
+      query: {
+        account: 'tate'
+      }
+    });
+    let newValidUntil = new Date(`${res.timestamp}.000Z`);
+    newValidUntil.setDate(newValidUntil.getDate() + 30);
+    const newValidUntilMs = newValidUntil.getTime();
+    assert.ok(dbRes.allowedUntil < newValidUntilMs, 'timestamp should not be refreshed');
+    assert.ok(dbRes.isAllowed === true);
+  });
+
+  it('allowlist subscription not enough for fee', async () => {
+    await fixture.setUp();
+
+    await initializeResourceManager();
+
+    let refBlockNumber = resourceManagerForkBlock;
+    transactions = [];
+    transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'tate2', 'resourcemanager', 'subscribe', '{ "isSignedWithActiveKey": true }'));
+
+    let block = {
+      refHiveBlockNumber: refBlockNumber,
+      refHiveBlockId: 'ABCD1',
+      prevRefHiveBlockId: 'ABCD2',
+      timestamp: '2025-05-12T16:30:03',
+      transactions,
+    };
+    await fixture.sendBlock(block);
+
+    const res = await fixture.database.getLatestBlockInfo();
+
+    const log0 = JSON.parse(res.transactions[0].logs);
+    assert.ok(log0.errors || log0.errors.length >= 1, 'Transaction should fail');
+    assert.equal(log0.errors[1], 'not enough tokens for allowList fee', 'Transaction should fail with correct error');
+
+    let dbRes = await fixture.database.findOne({
+      contract: 'resourcemanager',
+      table: 'accountControls',
+      query: {
+        account: 'tate2'
+      }
+    });
+    assert.ok(!dbRes, 'should not have account control');
+  });
+
+  it('allowlist subscription in denylist', async () => {
+    await fixture.setUp();
+
+    await initializeResourceManager();
+
+    let refBlockNumber = resourceManagerForkBlock;
+    transactions = [];
+    transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'resourcemanager', 'updateAccount', '{"account": "tate2", "isDenied": true}' ));
+    transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'tate2', 'resourcemanager', 'subscribe', '{ "isSignedWithActiveKey": true }'));
+
+    let block = {
+      refHiveBlockNumber: refBlockNumber,
+      refHiveBlockId: 'ABCD1',
+      prevRefHiveBlockId: 'ABCD2',
+      timestamp: '2025-05-12T16:30:03',
+      transactions,
+    };
+    await fixture.sendBlock(block);
+
+    const res = await fixture.database.getLatestBlockInfo();
+
+    const log1 = JSON.parse(res.transactions[1].logs);
+    assert.ok(log1.errors || log1.errors.length >= 1, 'Transaction should fail');
+    assert.equal(log1.errors[0], 'cannot be purchased as long as you are throttled.', 'Transaction should fail with correct error');
+
+    let dbRes = await fixture.database.findOne({
+      contract: 'resourcemanager',
+      table: 'accountControls',
+      query: {
+        account: 'tate2'
+      }
+    });
+    assert.ok(dbRes.isDenied, 'should be denied');
+    assert.ok(!dbRes.isAllowed, 'should not be allowed');
   });
 
   it('allowlist expiration', async () => {
@@ -794,7 +877,7 @@ describe('resourcemanager', function () {
     await fixture.sendBlock(block);
 
     const res = await fixture.database.getLatestBlockInfo();
-    
+
     const log1 = JSON.parse(res.transactions[1].logs);
     assert.ok(log1.events && log1.events.length >= 1, 'Transaction should have events');
     assert.ok(log1.events[0].contract === 'resourcemanager' && log1.events[0].event === 'allowListSubscriptionExpired', 'AllowList subscription should have expired');
