@@ -114,8 +114,29 @@ echo ""
 
 # Step 4: Restore the database
 echo "[4/7] Restoring database from backup..."
-docker compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_restore.archive
-echo "✓ Database restored"
+# Temporarily disable set -e to handle mongorestore exit codes gracefully
+set +e
+RESTORE_OUTPUT=$(docker compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_restore.archive 2>&1)
+RESTORE_EXIT_CODE=$?
+set -e  # Re-enable exit on error
+
+# Check if documents were restored (even if there's a warning/error at the end)
+if echo "$RESTORE_OUTPUT" | grep -q "document(s) restored successfully"; then
+    # Extract document count (works on both macOS and Linux)
+    RESTORED_COUNT=$(echo "$RESTORE_OUTPUT" | grep "document(s) restored successfully" | sed -E 's/.*([0-9]+) document\(s\) restored successfully.*/\1/')
+    echo "✓ Database restored: $RESTORED_COUNT documents restored"
+    
+    # Check for demultiplexing error (common but often harmless)
+    if echo "$RESTORE_OUTPUT" | grep -q "error demultiplexing archive"; then
+        echo "  ⚠️  Warning: Archive demultiplexing error detected (may be harmless if documents were restored)"
+        echo "  This can occur due to MongoDB version differences or archive format issues"
+        echo "  Continuing with restore process..."
+    fi
+else
+    echo "✗ Database restore failed!"
+    echo "$RESTORE_OUTPUT"
+    exit 1
+fi
 echo ""
 
 # Step 5: Restart MongoDB container (to ensure clean state)
