@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  mongodb:
+  he-mongo:
     image: mongo:4.4
     container_name: hsc-mongodb
     restart: unless-stopped
@@ -18,35 +18,35 @@ services:
     networks:
       - hsc-network
 
-  mongodb-init:
+  he-mongo-init:
     image: mongo:4.4
     container_name: hsc-mongodb-init
     depends_on:
-      mongodb:
+      he-mongo:
         condition: service_healthy
     restart: "no"
     networks:
       - hsc-network
     entrypoint: >
       bash -c "
-        until mongo --host mongodb --eval 'print(\"MongoDB is ready\")' --quiet; do
+        until mongo --host he-mongo --eval 'print(\"MongoDB is ready\")' --quiet; do
           echo 'Waiting for MongoDB...';
           sleep 2;
         done;
-        mongo --host mongodb --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongodb:27017\"}]})' --quiet;
+        mongo --host he-mongo --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"he-mongo:27017\"}]})' --quiet;
         echo 'Replica set initialized';
       "
 
-  app:
+  he-app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: hsc-app
     restart: unless-stopped
     depends_on:
-      mongodb:
+      he-mongo:
         condition: service_healthy
-      mongodb-init:
+      he-mongo-init:
         condition: service_completed_successfully
     ports:
       - "5000:5000"  # RPC port

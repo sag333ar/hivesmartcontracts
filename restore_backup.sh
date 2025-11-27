@@ -50,13 +50,13 @@ echo ""
 
 # Pre-flight checks: Ensure MongoDB is running and replica set is initialized
 echo "Checking MongoDB service status..."
-if ! docker-compose ps mongodb | grep -q "Up"; then
+if ! docker-compose ps he-mongo | grep -q "Up"; then
     echo "MongoDB service is not running. Starting MongoDB..."
-    docker-compose up -d mongodb
+    docker-compose up -d he-mongo
     echo "Waiting for MongoDB to start..."
     sleep 5
     # Wait for MongoDB to be ready
-    until docker-compose exec -T mongodb mongo --eval 'db.runCommand("ping").ok' --quiet > /dev/null 2>&1; do
+    until docker-compose exec -T he-mongo mongo --eval 'db.runCommand("ping").ok' --quiet > /dev/null 2>&1; do
         echo "  Waiting for MongoDB..."
         sleep 2
     done
@@ -68,20 +68,20 @@ echo ""
 
 # Check if replica set is initialized
 echo "Checking replica set status..."
-RS_STATUS=$(docker-compose exec -T mongodb mongo --quiet --eval 'rs.status().ok' 2>/dev/null || echo "0")
+RS_STATUS=$(docker-compose exec -T he-mongo mongo --quiet --eval 'rs.status().ok' 2>/dev/null || echo "0")
 
 if [ "$RS_STATUS" != "1" ]; then
     echo "Replica set rs0 is not initialized. Initializing..."
-    docker-compose exec -T mongodb mongo --quiet <<EOF
+    docker-compose exec -T he-mongo mongo --quiet <<EOF
 rs.initiate({
   _id: "rs0",
-  members: [{ _id: 0, host: "mongodb:27017" }]
+  members: [{ _id: 0, host: "he-mongo:27017" }]
 })
 EOF
     echo "Waiting for replica set to initialize..."
     sleep 5
     # Wait for replica set to be ready
-    until docker-compose exec -T mongodb mongo --quiet --eval 'rs.status().ok' 2>/dev/null | grep -q "1"; do
+    until docker-compose exec -T he-mongo mongo --quiet --eval 'rs.status().ok' 2>/dev/null | grep -q "1"; do
         echo "  Waiting for replica set..."
         sleep 2
     done
@@ -93,13 +93,13 @@ echo ""
 
 # Step 1: Stop the app
 echo "[1/7] Stopping application..."
-docker-compose stop app
+docker-compose stop he-app
 echo "✓ Application stopped"
 echo ""
 
 # Step 2: Drop the database
 echo "[2/7] Dropping existing database..."
-docker-compose exec -T mongodb mongo hsc --quiet <<EOF
+docker-compose exec -T he-mongo mongo hsc --quiet <<EOF
 db.dropDatabase()
 quit()
 EOF
@@ -108,26 +108,26 @@ echo ""
 
 # Step 3: Copy backup file into container
 echo "[3/7] Copying backup file into container..."
-docker-compose cp "$BACKUP_FILE" mongodb:/tmp/hsc_restore.archive
+docker-compose cp "$BACKUP_FILE" he-mongo:/tmp/hsc_restore.archive
 echo "✓ Backup file copied"
 echo ""
 
 # Step 4: Restore the database
 echo "[4/7] Restoring database from backup..."
-docker-compose exec mongodb mongorestore --gzip --archive=/tmp/hsc_restore.archive
+docker-compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_restore.archive
 echo "✓ Database restored"
 echo ""
 
 # Step 5: Restart MongoDB container (to ensure clean state)
 echo "[5/7] Restarting MongoDB container..."
-docker-compose restart mongodb
+docker-compose restart he-mongo
 echo "✓ MongoDB restarted"
 echo ""
 
 # Wait for MongoDB to be ready
 echo "Waiting for MongoDB to be ready..."
 sleep 5
-until docker-compose exec -T mongodb mongo --eval 'db.runCommand("ping").ok' --quiet > /dev/null 2>&1; do
+until docker-compose exec -T he-mongo mongo --eval 'db.runCommand("ping").ok' --quiet > /dev/null 2>&1; do
     echo "  Waiting for MongoDB..."
     sleep 2
 done
@@ -135,17 +135,17 @@ echo "✓ MongoDB is ready"
 
 # Verify replica set is still initialized after restart
 echo "Verifying replica set status..."
-RS_STATUS=$(docker-compose exec -T mongodb mongo --quiet --eval 'try { rs.status().ok } catch(e) { 0 }' 2>/dev/null || echo "0")
+RS_STATUS=$(docker-compose exec -T he-mongo mongo --quiet --eval 'try { rs.status().ok } catch(e) { 0 }' 2>/dev/null || echo "0")
 if [ "$RS_STATUS" != "1" ]; then
     echo "Replica set lost after restart. Re-initializing..."
-    docker-compose exec -T mongodb mongo --quiet <<EOF
+    docker-compose exec -T he-mongo mongo --quiet <<EOF
 rs.initiate({
   _id: "rs0",
-  members: [{ _id: 0, host: "mongodb:27017" }]
+  members: [{ _id: 0, host: "he-mongo:27017" }]
 })
 EOF
     sleep 5
-    until docker-compose exec -T mongodb mongo --quiet --eval 'rs.status().ok' 2>/dev/null | grep -q "1"; do
+    until docker-compose exec -T he-mongo mongo --quiet --eval 'rs.status().ok' 2>/dev/null | grep -q "1"; do
         echo "  Waiting for replica set..."
         sleep 2
     done
@@ -184,7 +184,7 @@ echo ""
 
 # Step 7: Restart the app
 echo "[7/7] Starting application..."
-docker-compose start app
+docker-compose start he-app
 echo "✓ Application started"
 echo ""
 
@@ -196,5 +196,5 @@ echo "✓ Database restored from: $BACKUP_FILE"
 echo "✓ Block number set to: $BLOCK_NUMBER"
 echo "✓ Application restarted"
 echo ""
-echo "View logs with: docker-compose logs -f app"
+echo "View logs with: docker-compose logs -f he-app"
 
