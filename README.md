@@ -42,7 +42,7 @@ The easiest way to run Hive Smart Contracts is using Docker and Docker Compose. 
    ```
 
 3. **Update `config.json`**:
-   - Set `databaseURL` to `"mongodb://mongodb:27017"` (Docker service name)
+   - Set `databaseURL` to `"mongodb://he-mongo:27017"` (Docker service name)
    - Configure other settings as needed (startHiveBlock, streamNodes, etc.)
 
 4. **Create `.env` file** (if needed for P2P/witness features):
