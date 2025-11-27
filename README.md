@@ -54,35 +54,35 @@ The easiest way to run Hive Smart Contracts is using Docker and Docker Compose. 
 
 5. **Start the services**:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 6. **View logs**:
    ```bash
    # All services
-   docker-compose logs -f
+   docker compose logs -f
    
    # Just the app
-   docker-compose logs -f he-app
+   docker compose logs -f he-app
    
    # Just MongoDB
-   docker-compose logs -f he-mongo
+   docker compose logs -f he-mongo
    ```
 
 7. **Stop the services**:
    ```bash
-   docker-compose down
+   docker compose down
    ```
 
 #### Docker Commands
 
-- **Start services**: `docker-compose up -d`
-- **Stop services**: `docker-compose down`
-- **Restart services**: `docker-compose restart`
-- **View logs**: `docker-compose logs -f [service-name]`
-- **Rebuild after code changes**: `docker-compose up -d --build`
-- **Access MongoDB shell**: `docker-compose exec he-mongo mongo`
-- **Access app container**: `docker-compose exec he-app sh`
+- **Start services**: `docker compose up -d`
+- **Stop services**: `docker compose down`
+- **Restart services**: `docker compose restart`
+- **View logs**: `docker compose logs -f [service-name]`
+- **Rebuild after code changes**: `docker compose up -d --build`
+- **Access MongoDB shell**: `docker compose exec he-mongo mongo`
+- **Access app container**: `docker compose exec he-app sh`
 
 #### Important Notes
 
@@ -101,8 +101,8 @@ The easiest way to run Hive Smart Contracts is using Docker and Docker Compose. 
 
 **Backup current state** (track current hive block in config):
 ```bash
-docker-compose exec he-mongo mongodump -d=hsc --gzip --archive=/tmp/hsc_backup.archive
-docker-compose cp he-mongo:/tmp/hsc_backup.archive ./hsc_backup.archive
+docker compose exec he-mongo mongodump -d=hsc --gzip --archive=/tmp/hsc_backup.archive
+docker compose cp he-mongo:/tmp/hsc_backup.archive ./hsc_backup.archive
 ```
 
 **Restore state** (when you have a backup archive file):
@@ -131,27 +131,27 @@ The script automatically extracts the block number from the filename and updates
 
 1. **Stop the application**:
    ```bash
-   docker-compose stop he-app
+   docker compose stop he-app
    ```
 
 2. **Drop the existing database**:
    ```bash
-   docker-compose exec he-mongo mongo hsc --eval "db.dropDatabase()"
+   docker compose exec he-mongo mongo hsc --eval "db.dropDatabase()"
    ```
 
 3. **Copy the backup archive into the MongoDB container**:
    ```bash
-   docker-compose cp ./hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive he-mongo:/tmp/hsc_backup.archive
+   docker compose cp ./hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive he-mongo:/tmp/hsc_backup.archive
    ```
 
 4. **Restore the database**:
    ```bash
-   docker-compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_backup.archive
+   docker compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_backup.archive
    ```
 
 5. **Restart MongoDB container**:
    ```bash
-   docker-compose restart he-mongo
+   docker compose restart he-mongo
    ```
 
 6. **Extract block number from filename** and **update `config.json`**:
@@ -160,7 +160,7 @@ The script automatically extracts the block number from the filename and updates
 
 7. **Start the application again**:
    ```bash
-   docker-compose start he-app
+   docker compose start he-app
    ```
 
 ### Manual Setup (Alternative)
