@@ -7,10 +7,12 @@
     "blocksLogFilePath": "./blocks.log",
     "javascriptVMTimeout": 10000,
     "streamNodes": [
-        "https://api.deathwing.me",
-        "https://rpc.ecency.com",
-        "https://hived.emre.sh",
-        "https://api.openhive.network"
+        "https://api.hive.blog",
+        "https://api.openhive.network",
+        "https://rpc.mahdiyari.info",
+        "https://api.syncad.com",
+        "https://techcoderx.com",
+        "https://api.deathwing.me"
     ],
     "startHiveBlock": 41967000,
     "genesisHiveBlock": 41967000,
@@ -18,7 +20,7 @@
     "defaultLogLevel": "warn",
     "domain" : "",
     "lightNode": {
-        "enabled": false,
+        "enabled": true,
         "blocksToKeep": 864000,
         "cleanupInterval": 600000
     },

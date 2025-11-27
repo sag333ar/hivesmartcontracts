@@ -17,49 +17,161 @@ This is actually pretty easy, you basically need a Hive account and that's it. T
 
 ## 4. Setup a Hive Smart Contracts node
 
-see wiki: https://github.com/hive-engine/hivesmartcontracts-wiki
+### Docker Setup (Recommended)
 
-In addition, the following is needed to use transaction framework for MongoDB:
-- Run MongoDB in replicated mode. This is as simple as changing the mongo config to add replication config:
-  ```
-    replication:
-      replSetName: "rs0"
-  ```
-  and then enabling replication by using the mongo shell:
-  ```
-  mongo
-  > rs.initiate()
-  ``` 
-  See https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/ for details.
-  Also, if you are /upgrading/ from a previous MongoDB, you need to take careful extra steps and follow
-  https://docs.mongodb.com/manual/release-notes/4.4-upgrade-standalone/
-  carefully.
-- Need version 3.6.3 mongo node library.
+The easiest way to run Hive Smart Contracts is using Docker and Docker Compose. This setup includes:
+- MongoDB 4.4 with replica set configuration (required for transactions)
+- Node.js application with all dependencies
+- Automatic initialization of MongoDB replica set
 
-Also, if using PM2, you will need to start the process with --no-treekill for proper shutdown. Also
-consider using --no-autorestart with proper monitoring to minimize noise and potential for problematic
-looping (though with transactions there is less risk of data corruption). Another oddity with PM2 is
- that you may need to clear node processes after a stop if the process does not terminate on its own. 
-Otherwise it will interfere with logging.
+#### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) installed
+- [Docker Compose](https://docs.docker.com/compose/install/) installed
 
-Also, with isolated-vm on node 20 and later, you will need to pass in --no-node-snapshot to node:
+#### Quick Start
 
-E.g.
+1. **Clone the repository** (if you haven't already):
+   ```bash
+   git clone <repository-url>
+   cd hivesmartcontracts
+   ```
+
+2. **Create configuration file**:
+   ```bash
+   cp config.example.json config.json
+   ```
+
+3. **Update `config.json`**:
+   - Set `databaseURL` to `"mongodb://mongodb:27017"` (Docker service name)
+   - Configure other settings as needed (startHiveBlock, streamNodes, etc.)
+
+4. **Create `.env` file** (if needed for P2P/witness features):
+   ```bash
+   # Optional: Only needed if witnessEnabled is true in config.json
+   ACCOUNT=your_account_name
+   ACTIVE_SIGNING_KEY=your_private_key
+   ```
+
+5. **Start the services**:
+   ```bash
+   docker-compose up -d
+   ```
+
+6. **View logs**:
+   ```bash
+   # All services
+   docker-compose logs -f
+   
+   # Just the app
+   docker-compose logs -f app
+   
+   # Just MongoDB
+   docker-compose logs -f mongodb
+   ```
+
+7. **Stop the services**:
+   ```bash
+   docker-compose down
+   ```
+
+#### Docker Commands
+
+- **Start services**: `docker-compose up -d`
+- **Stop services**: `docker-compose down`
+- **Restart services**: `docker-compose restart`
+- **View logs**: `docker-compose logs -f [service-name]`
+- **Rebuild after code changes**: `docker-compose up -d --build`
+- **Access MongoDB shell**: `docker-compose exec mongodb mongo`
+- **Access app container**: `docker-compose exec app sh`
+
+#### Important Notes
+
+- MongoDB replica set is automatically initialized by the `mongodb-init` service
+- Data persistence: MongoDB data is stored in Docker volumes (`mongodb_data` and `mongodb_config`)
+- Ports exposed:
+  - `5000`: RPC server
+  - `5001`: P2P server
+  - `5002`: WebSocket server
+- MongoDB is only accessible within the Docker network (not exposed to host) to avoid port conflicts
+- The application automatically uses `--no-node-snapshot` flag for Node.js (required for isolated-vm on Node 20+)
+- Configuration file (`config.json`) is mounted as read-only volume
+- Log files are persisted in `./logs` directory and `./node_app.log`
+
+### DB Backup and Restore (Docker)
+
+**Backup current state** (track current hive block in config):
+```bash
+docker-compose exec mongodb mongodump -d=hsc --gzip --archive=/tmp/hsc_backup.archive
+docker-compose cp mongodb:/tmp/hsc_backup.archive ./hsc_backup.archive
 ```
-pm2 start app.js --no-treekill --kill-timeout 10000 --no-autorestart --node-args="--no-node-snapshot"
+
+**Restore state** (when you have a backup archive file):
+
+Backup files follow this pattern: `hsc_DATE_HASH_bBLOCKNUMBER.archive`
+- Example: `hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive`
+- The block number is extracted from the filename (e.g., `101546800` from `_b101546800.archive`)
+
+**Recommended: Use the restore script** (handles all steps automatically):
+```bash
+./restore_backup.sh hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive
 ```
 
-### DB Backup and Restore
+The script will:
+1. Stop the application
+2. Drop the existing database
+3. Copy the backup file into the container
+4. Restore the database from backup
+5. Restart MongoDB container
+6. **Automatically update `config.json`** with the extracted block number (`startHiveBlock`)
+7. Start the application
 
-Backup current state (track current hive blpck in config)
+The script automatically extracts the block number from the filename and updates `config.json`, so no manual configuration is needed.
 
-`mongodump -d=hsc --gzip --archive=hsc_50287280.archive`
+**Manual restore method** (if you prefer to do it step by step):
 
-Restore state
+1. **Stop the application**:
+   ```bash
+   docker-compose stop app
+   ```
 
-`mongorestore --gzip --archive=hsc_50287280.archive`
+2. **Drop the existing database**:
+   ```bash
+   docker-compose exec mongodb mongo hsc --eval "db.dropDatabase()"
+   ```
 
-Edit config.json to match block number of backup.
+3. **Copy the backup archive into the MongoDB container**:
+   ```bash
+   docker-compose cp ./hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive mongodb:/tmp/hsc_backup.archive
+   ```
+
+4. **Restore the database**:
+   ```bash
+   docker-compose exec mongodb mongorestore --gzip --archive=/tmp/hsc_backup.archive
+   ```
+
+5. **Restart MongoDB container**:
+   ```bash
+   docker-compose restart mongodb
+   ```
+
+6. **Extract block number from filename** and **update `config.json`**:
+   - Extract the number after `_b` in the filename (e.g., `101546800` from `_b101546800.archive`)
+   - Update `startHiveBlock` in `config.json` to this number
+
+7. **Start the application again**:
+   ```bash
+   docker-compose start app
+   ```
+
+### Manual Setup (Alternative)
+
+For manual setup without Docker, see wiki: https://github.com/hive-engine/hivesmartcontracts-wiki
+
+**Requirements for manual setup:**
+- MongoDB 4.4+ running in replica set mode (replSetName: "rs0")
+- Node.js >= v18.17.0
+- MongoDB replica set must be initialized: `rs.initiate()`
+- See MongoDB documentation for replica set setup: https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/
 ## 5. Tests
 * npm run test
 
