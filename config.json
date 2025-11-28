@@ -15,7 +15,7 @@
         "https://techcoderx.com",
         "https://api.deathwing.me"
     ],
-    "startHiveBlock": 41967000,
+    "startHiveBlock": 101561162,
     "genesisHiveBlock": 41967000,
     "witnessEnabled": true,
     "defaultLogLevel": "warn",
