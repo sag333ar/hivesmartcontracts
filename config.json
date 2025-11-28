@@ -7,6 +7,7 @@
     "blocksLogFilePath": "./blocks.log",
     "javascriptVMTimeout": 10000,
     "streamNodes": [
+        "https://hive-api.sagarkothari88.one/",
         "https://api.hive.blog",
         "https://api.openhive.network",
         "https://rpc.mahdiyari.info",
