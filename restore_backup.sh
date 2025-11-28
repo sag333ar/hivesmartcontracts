@@ -1,24 +1,35 @@
 #!/bin/bash
 
 # Script to restore MongoDB backup for Hive Smart Contracts
-# Usage: ./restore_backup.sh <backup_archive_file>
+# Usage: ./restore_backup.sh <backup_archive_file> [--skip-restore]
 # Example: ./restore_backup.sh hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive
+# Example (skip restore): ./restore_backup.sh hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive --skip-restore
 
 set -e  # Exit on error
 
-# Check if backup file is provided
-if [ -z "$1" ]; then
+# Parse arguments
+SKIP_RESTORE=false
+BACKUP_FILE=""
+
+for arg in "$@"; do
+    case $arg in
+        --skip-restore)
+            SKIP_RESTORE=true
+            ;;
+        *)
+            if [ -z "$BACKUP_FILE" ] && [[ "$arg" != --* ]]; then
+                BACKUP_FILE="$arg"
+            fi
+            ;;
+    esac
+done
+
+# Check if backup file is provided (needed to extract block number)
+if [ -z "$BACKUP_FILE" ]; then
     echo "Error: Backup archive file not provided"
-    echo "Usage: $0 <backup_archive_file>"
+    echo "Usage: $0 <backup_archive_file> [--skip-restore]"
     echo "Example: $0 hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive"
-    exit 1
-fi
-
-BACKUP_FILE="$1"
-
-# Check if backup file exists
-if [ ! -f "$BACKUP_FILE" ]; then
-    echo "Error: Backup file '$BACKUP_FILE' not found"
+    echo "Example (skip restore): $0 hsc_11-27-2025_6e2ff48438807790f8051efb4f67c7c8_b101546800.archive --skip-restore"
     exit 1
 fi
 
@@ -34,6 +45,12 @@ if [ -z "$BLOCK_NUMBER" ]; then
     exit 1
 fi
 
+# Check if backup file exists (only if not skipping restore)
+if [ "$SKIP_RESTORE" = false ] && [ ! -f "$BACKUP_FILE" ]; then
+    echo "Error: Backup file '$BACKUP_FILE' not found"
+    exit 1
+fi
+
 echo "Extracted block number: $BLOCK_NUMBER"
 
 # Check if docker compose is available
@@ -45,7 +62,13 @@ fi
 echo "=========================================="
 echo "Hive Smart Contracts - Database Restore"
 echo "=========================================="
-echo "Backup file: $BACKUP_FILE"
+if [ "$SKIP_RESTORE" = true ]; then
+    echo "Mode: SKIP RESTORE (only update config and restart app)"
+    echo "Block number: $BLOCK_NUMBER"
+else
+    echo "Backup file: $BACKUP_FILE"
+    echo "Block number: $BLOCK_NUMBER"
+fi
 echo ""
 
 # Pre-flight checks: Ensure MongoDB is running and replica set is initialized
@@ -92,55 +115,64 @@ fi
 echo ""
 
 # Step 1: Stop the app
-echo "[1/7] Stopping application..."
+echo "[1/$(if [ "$SKIP_RESTORE" = true ]; then echo "4"; else echo "7"; fi)] Stopping application..."
 docker compose stop he-app
 echo "✓ Application stopped"
 echo ""
 
-# Step 2: Drop the database
-echo "[2/7] Dropping existing database..."
-docker compose exec -T he-mongo mongo hsc --quiet <<EOF
+# Steps 2-4: Restore database (skip if --skip-restore flag is set)
+if [ "$SKIP_RESTORE" = false ]; then
+    # Step 2: Drop the database
+    echo "[2/7] Dropping existing database..."
+    docker compose exec -T he-mongo mongo hsc --quiet <<EOF
 db.dropDatabase()
 quit()
 EOF
-echo "✓ Database dropped"
-echo ""
+    echo "✓ Database dropped"
+    echo ""
 
-# Step 3: Copy backup file into container
-echo "[3/7] Copying backup file into container..."
-docker compose cp "$BACKUP_FILE" he-mongo:/tmp/hsc_restore.archive
-echo "✓ Backup file copied"
-echo ""
+    # Step 3: Copy backup file into container
+    echo "[3/7] Copying backup file into container..."
+    docker compose cp "$BACKUP_FILE" he-mongo:/tmp/hsc_restore.archive
+    echo "✓ Backup file copied"
+    echo ""
 
-# Step 4: Restore the database
-echo "[4/7] Restoring database from backup..."
-# Temporarily disable set -e to handle mongorestore exit codes gracefully
-set +e
-RESTORE_OUTPUT=$(docker compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_restore.archive 2>&1)
-RESTORE_EXIT_CODE=$?
-set -e  # Re-enable exit on error
+    # Step 4: Restore the database
+    echo "[4/7] Restoring database from backup..."
+    # Temporarily disable set -e to handle mongorestore exit codes gracefully
+    set +e
+    RESTORE_OUTPUT=$(docker compose exec he-mongo mongorestore --gzip --archive=/tmp/hsc_restore.archive 2>&1)
+    RESTORE_EXIT_CODE=$?
+    set -e  # Re-enable exit on error
 
-# Check if documents were restored (even if there's a warning/error at the end)
-if echo "$RESTORE_OUTPUT" | grep -q "document(s) restored successfully"; then
-    # Extract document count (works on both macOS and Linux)
-    RESTORED_COUNT=$(echo "$RESTORE_OUTPUT" | grep "document(s) restored successfully" | sed -E 's/.*([0-9]+) document\(s\) restored successfully.*/\1/')
-    echo "✓ Database restored: $RESTORED_COUNT documents restored"
-    
-    # Check for demultiplexing error (common but often harmless)
-    if echo "$RESTORE_OUTPUT" | grep -q "error demultiplexing archive"; then
-        echo "  ⚠️  Warning: Archive demultiplexing error detected (may be harmless if documents were restored)"
-        echo "  This can occur due to MongoDB version differences or archive format issues"
-        echo "  Continuing with restore process..."
+    # Check if documents were restored (even if there's a warning/error at the end)
+    if echo "$RESTORE_OUTPUT" | grep -q "document(s) restored successfully"; then
+        # Extract document count (works on both macOS and Linux)
+        RESTORED_COUNT=$(echo "$RESTORE_OUTPUT" | grep "document(s) restored successfully" | sed -E 's/.*([0-9]+) document\(s\) restored successfully.*/\1/')
+        echo "✓ Database restored: $RESTORED_COUNT documents restored"
+        
+        # Check for demultiplexing error (common but often harmless)
+        if echo "$RESTORE_OUTPUT" | grep -q "error demultiplexing archive"; then
+            echo "  ⚠️  Warning: Archive demultiplexing error detected (may be harmless if documents were restored)"
+            echo "  This can occur due to MongoDB version differences or archive format issues"
+            echo "  Continuing with restore process..."
+        fi
+    else
+        echo "✗ Database restore failed!"
+        echo "$RESTORE_OUTPUT"
+        exit 1
     fi
-else
-    echo "✗ Database restore failed!"
-    echo "$RESTORE_OUTPUT"
-    exit 1
-fi
-echo ""
+    echo ""
 
-# Step 5: Restart MongoDB container (to ensure clean state)
-echo "[5/7] Restarting MongoDB container..."
+    # Step 5: Restart MongoDB container (to ensure clean state)
+    echo "[5/7] Restarting MongoDB container..."
+else
+    echo "⏭️  Skipping database restore (--skip-restore flag set)"
+    echo ""
+    
+    # Step 2: Restart MongoDB container (to ensure clean state)
+    echo "[2/4] Restarting MongoDB container..."
+fi
 docker compose restart he-mongo
 echo "✓ MongoDB restarted"
 echo ""
@@ -176,8 +208,10 @@ else
 fi
 echo ""
 
-# Step 6: Update config.json with block number
-echo "[6/7] Updating config.json with block number $BLOCK_NUMBER..."
+# Step 6 (or 3 if skip-restore): Update config.json with block number
+STEP_NUM=$(if [ "$SKIP_RESTORE" = true ]; then echo "3"; else echo "6"; fi)
+TOTAL_STEPS=$(if [ "$SKIP_RESTORE" = true ]; then echo "4"; else echo "7"; fi)
+echo "[$STEP_NUM/$TOTAL_STEPS] Updating config.json with block number $BLOCK_NUMBER..."
 if [ ! -f "config.json" ]; then
     echo "Error: config.json not found"
     exit 1
@@ -203,17 +237,31 @@ else
 fi
 echo ""
 
-# Step 7: Restart the app
-echo "[7/7] Starting application..."
-docker compose start he-app
+# Step 7 (or 4 if skip-restore): Start the app
+STEP_NUM=$(if [ "$SKIP_RESTORE" = true ]; then echo "4"; else echo "7"; fi)
+TOTAL_STEPS=$(if [ "$SKIP_RESTORE" = true ]; then echo "4"; else echo "7"; fi)
+echo "[$STEP_NUM/$TOTAL_STEPS] Starting application..."
+# Ensure he-mongo-init dependency is satisfied (it's a one-time service)
+# Since replica set is already initialized, this will exit quickly
+docker compose up -d he-mongo-init 2>/dev/null || true
+# Wait a moment for it to complete
+sleep 2
+# Now start the app (up -d handles dependencies better than start)
+docker compose up -d he-app
 echo "✓ Application started"
 echo ""
 
 echo "=========================================="
-echo "Restore completed successfully!"
+if [ "$SKIP_RESTORE" = true ]; then
+    echo "Configuration update completed successfully!"
+else
+    echo "Restore completed successfully!"
+fi
 echo "=========================================="
 echo ""
-echo "✓ Database restored from: $BACKUP_FILE"
+if [ "$SKIP_RESTORE" = false ]; then
+    echo "✓ Database restored from: $BACKUP_FILE"
+fi
 echo "✓ Block number set to: $BLOCK_NUMBER"
 echo "✓ Application restarted"
 echo ""
