@@ -217,6 +217,24 @@ if [ ! -f "config.json" ]; then
     exit 1
 fi
 
+# Check and fix databaseURL if it's using localhost/127.0.0.1
+CURRENT_DB_URL=$(grep -o '"databaseURL": "[^"]*"' config.json | cut -d'"' -f4)
+if echo "$CURRENT_DB_URL" | grep -qE '(127\.0\.0\.1|localhost)'; then
+    echo "  ⚠️  Warning: databaseURL is set to $CURRENT_DB_URL"
+    echo "  Updating to use Docker service name: mongodb://he-mongo:27017"
+    
+    if command -v jq &> /dev/null; then
+        jq '.databaseURL = "mongodb://he-mongo:27017"' config.json > config.json.tmp && mv config.json.tmp config.json
+    else
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's|"databaseURL": "[^"]*"|"databaseURL": "mongodb://he-mongo:27017"|' config.json
+        else
+            sed -i 's|"databaseURL": "[^"]*"|"databaseURL": "mongodb://he-mongo:27017"|' config.json
+        fi
+    fi
+    echo "  ✓ databaseURL updated"
+fi
+
 # Check if jq is available for JSON manipulation
 if command -v jq &> /dev/null; then
     # Use jq to update the JSON file
